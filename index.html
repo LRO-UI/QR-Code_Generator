@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>QR code generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300..700&family=IBM+Plex+Mono:wght@400;500&family=Playfair+Display:wght@400..900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<style>
+  :root{
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px);
+    padding-bottom:env(safe-area-inset-bottom,0px);
+    color-scheme:dark;
+    --bg:#0d0f14; --panel:#14171f; --panel-edge:#232732;
+    --blue:#3f6fa8; --blue2:#5c7f9e; --steel:#7c8698;
+    --ink:#e7eaf0; --ink-soft:#727c8c; --line:#252a35;
+    --danger:#c77a7a;
+    --font-ui:'Space Grotesk', system-ui, sans-serif;
+    --font-mono:'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  }
+  html{scroll-padding-top:env(safe-area-inset-top,0px); height:100%;}
+  *{box-sizing:border-box;}
+  body{
+    margin:0; min-height:100%; background:var(--bg); color:var(--ink);
+    font-family:var(--font-ui); display:flex; flex-direction:column;
+  }
+  header{
+    padding:22px 30px; border-bottom:4px double var(--blue2);
+    display:flex; align-items:baseline; gap:16px; flex-wrap:wrap;
+  }
+  header h1{
+    margin:0; font-family:'Playfair Display', Georgia, serif; font-weight:800;
+    font-size:1.5rem; letter-spacing:.02em; color:var(--ink);
+  }
+  header span{
+    color:var(--ink-soft); font-size:.72rem; text-transform:uppercase;
+    letter-spacing:.24em;
+  }
+  .app{display:flex; flex:1; flex-wrap:wrap;}
+
+  /* Stage / preview */
+  .stage{
+    flex:3 1 480px; min-width:0; position:relative;
+    padding:40px; display:flex; align-items:stretch;
+    border-right:1px solid var(--line);
+  }
+  .rail-frame{ position:relative; flex:1; display:flex; min-height:420px; }
+  .rail-frame::before, .rail-frame::after{
+    content:''; position:absolute; pointer-events:none; z-index:2;
+  }
+  .rail-frame::before{ inset:8px; border:1px solid rgba(231,234,240,.6); }
+  .rail-frame::after{ inset:13px; border:1px solid rgba(92,127,158,.35); }
+  .rail-d{
+    position:absolute; width:10px; height:10px; z-index:3;
+    background:var(--blue); border:2px solid var(--bg);
+    transform:translate(-50%,-50%) rotate(45deg);
+    box-shadow:0 0 0 1px rgba(231,234,240,.5);
+  }
+  .rail-d.tl{top:8px; left:8px;} .rail-d.tr{top:8px; left:calc(100% - 8px);}
+  .rail-d.bl{top:calc(100% - 8px); left:8px;} .rail-d.br{top:calc(100% - 8px); left:calc(100% - 8px);}
+
+  .preview{
+    flex:1; margin:24px; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:22px; min-width:0;
+  }
+  .plate{
+    width:min(100%, 440px); aspect-ratio:1/1; display:flex;
+    align-items:center; justify-content:center;
+  }
+  .plate svg{ width:100%; height:100%; display:block; }
+  .empty{
+    width:min(100%, 440px); aspect-ratio:1/1; display:flex; align-items:center;
+    justify-content:center; text-align:center; padding:30px;
+    border:1px dashed var(--panel-edge); color:var(--ink-soft); font-size:.9rem; line-height:1.5;
+  }
+  .empty.error{ color:var(--danger); border-color:rgba(199,122,122,.4); }
+  .meta{
+    width:min(100%, 440px); display:flex; flex-direction:column; gap:6px;
+  }
+  .meta .dims{ font-size:.72rem; color:var(--blue2); font-variant-numeric:tabular-nums; letter-spacing:.06em; }
+  .meta .payload{
+    font-family:var(--font-mono); font-size:.72rem; color:var(--ink-soft);
+    overflow-wrap:anywhere; line-height:1.5; max-height:4.5em; overflow:auto;
+  }
+
+  /* Side panel */
+  .side{
+    flex:1 1 320px; min-width:0; padding:30px 28px;
+    display:flex; flex-direction:column; gap:26px; overflow:auto;
+  }
+  .group-title{
+    display:flex; align-items:center; gap:10px;
+    text-transform:uppercase; letter-spacing:.26em; font-size:.66rem;
+    color:var(--ink-soft); margin-bottom:12px;
+  }
+  .group-title::before{ content:''; width:6px; height:6px; background:var(--blue); transform:rotate(45deg); flex:none; }
+  .group-title::after{ content:''; flex:1; height:3px; border-top:1px solid var(--blue); border-bottom:1px solid var(--blue2); }
+
+  .fields{ display:flex; flex-direction:column; gap:10px; margin-top:14px; }
+  .fields[hidden]{ display:none; }
+  .field label{ display:block; font-size:.72rem; color:var(--ink-soft); margin-bottom:5px; letter-spacing:.04em; }
+  .field-pair{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  input[type=text], input[type=url], input[type=email], input[type=tel], input[type=password], textarea, select{
+    width:100%; background:var(--panel); color:var(--ink); border:1px solid var(--line);
+    padding:9px 10px; font-family:var(--font-ui); font-size:.85rem; border-radius:0;
+  }
+  textarea{ resize:vertical; min-height:70px; line-height:1.4; }
+  input:focus, textarea:focus, select:focus{ outline:none; border-color:var(--blue2); box-shadow:0 0 0 1px var(--blue2); }
+  input::placeholder, textarea::placeholder{ color:#4d5563; }
+  .check{ display:flex; align-items:center; gap:9px; font-size:.8rem; color:var(--ink-soft); cursor:pointer; }
+  .check input{ accent-color:var(--blue); width:14px; height:14px; margin:0; }
+  .hint{ font-size:.7rem; color:var(--ink-soft); line-height:1.45; }
+
+  .row{ display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; font-size:.8rem; }
+  .row .val{ color:var(--blue2); font-size:.72rem; font-variant-numeric:tabular-nums; }
+  input[type=range]{
+    width:100%; -webkit-appearance:none; appearance:none; height:2px; background:var(--line); outline:none; margin:10px 0;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:13px; height:13px; background:var(--blue);
+    border:2px solid var(--bg); box-shadow:0 0 0 1px var(--blue2); transform:rotate(45deg); cursor:pointer;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:11px; height:11px; background:var(--blue); border:2px solid var(--bg);
+    box-shadow:0 0 0 1px var(--blue2); transform:rotate(45deg); cursor:pointer; border-radius:0;
+  }
+  input[type=range]:focus-visible::-webkit-slider-thumb{ box-shadow:0 0 0 2px #fff; }
+
+  .btn-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .btn-grid.three{ grid-template-columns:repeat(3,1fr); }
+  button.tool{
+    --c:var(--blue2);
+    border:1px solid var(--line); background:
+      linear-gradient(var(--c),var(--c)) top left/8px 1px no-repeat,
+      linear-gradient(var(--c),var(--c)) top left/1px 8px no-repeat,
+      linear-gradient(var(--c),var(--c)) top right/8px 1px no-repeat,
+      linear-gradient(var(--c),var(--c)) top right/1px 8px no-repeat,
+      linear-gradient(var(--c),var(--c)) bottom left/8px 1px no-repeat,
+      linear-gradient(var(--c),var(--c)) bottom left/1px 8px no-repeat,
+      linear-gradient(var(--c),var(--c)) bottom right/8px 1px no-repeat,
+      linear-gradient(var(--c),var(--c)) bottom right/1px 8px no-repeat,
+      var(--panel);
+    box-shadow:inset 0 0 0 3px var(--panel), inset 0 0 0 4px var(--panel-edge);
+    color:var(--ink); font-family:var(--font-ui); font-size:.72rem;
+    letter-spacing:.06em; padding:11px 8px; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:7px;
+  }
+  button.tool:hover{ --c:#fff; }
+  button.tool:focus-visible{ outline:1px solid #fff; outline-offset:2px; }
+  button.tool.active{ --c:var(--blue); background-color:rgba(63,111,168,.18); color:#fff; }
+  button.tool svg{ width:26px; height:26px; display:block; }
+  button.tool svg *{ fill:currentColor; }
+
+  button.reset{
+    background:transparent; border:1px solid var(--line);
+    color:var(--ink-soft); font-family:var(--font-ui); font-size:.68rem; text-transform:uppercase;
+    letter-spacing:.2em; padding:11px 10px; cursor:pointer;
+  }
+  button.reset:hover{ color:var(--ink); border-color:var(--blue2); }
+  button.reset:focus-visible{ outline:1px solid #fff; outline-offset:2px; }
+  button.reset:disabled{ opacity:.4; cursor:not-allowed; }
+  .export{ display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .status{ font-size:.7rem; color:var(--ink-soft); margin-top:8px; min-height:1em; }
+
+  @media (max-width:760px){
+    .stage{ border-right:none; border-bottom:1px solid var(--line); padding:18px; flex-basis:100%; }
+    .rail-frame{ min-height:0; }
+    .preview{ margin:26px 22px; }
+    header{ padding:18px 20px; }
+    .side{ padding:24px 20px; flex-basis:100%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>QR code generator</h1>
+</header>
+
+<div class="app">
+  <div class="stage">
+    <div class="rail-frame">
+      <div class="rail-d tl"></div><div class="rail-d tr"></div>
+      <div class="rail-d bl"></div><div class="rail-d br"></div>
+      <div class="preview">
+        <div class="plate" id="plate" role="img" aria-label="QR code preview"></div>
+        <div class="meta">
+          <div class="dims" id="dims"></div>
+          <div class="payload" id="payload"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="side">
+    <div>
+      <div class="group-title">Content</div>
+      <div class="btn-grid three" id="typeGrid">
+        <button class="tool active" data-type="url">URL</button>
+        <button class="tool" data-type="email">Email</button>
+        <button class="tool" data-type="phone">Phone</button>
+        <button class="tool" data-type="location">Location</button>
+        <button class="tool" data-type="wifi">Wi-Fi</button>
+      </div>
+
+      <div class="fields" data-for="url">
+        <div class="field">
+          <label for="urlInput">Web address</label>
+          <input type="url" id="urlInput" placeholder="https://example.com" value="https://example.com">
+        </div>
+      </div>
+
+      <div class="fields" data-for="email" hidden>
+        <div class="field">
+          <label for="emailTo">Send to</label>
+          <input type="email" id="emailTo" placeholder="name@company.com">
+        </div>
+        <div class="field">
+          <label for="emailSubject">Subject</label>
+          <input type="text" id="emailSubject" placeholder="Optional">
+        </div>
+        <div class="field">
+          <label for="emailBody">Message</label>
+          <textarea id="emailBody" placeholder="Optional"></textarea>
+        </div>
+      </div>
+
+      <div class="fields" data-for="phone" hidden>
+        <div class="field">
+          <label for="phoneInput">Phone number</label>
+          <input type="tel" id="phoneInput" placeholder="+55 11 91234 5678">
+        </div>
+        <div class="hint">Include the country code so it dials correctly from any phone.</div>
+      </div>
+
+      <div class="fields" data-for="location" hidden>
+        <div class="field-pair">
+          <div class="field">
+            <label for="latInput">Latitude</label>
+            <input type="text" inputmode="decimal" id="latInput" placeholder="-23.5505">
+          </div>
+          <div class="field">
+            <label for="lngInput">Longitude</label>
+            <input type="text" inputmode="decimal" id="lngInput" placeholder="-46.6333">
+          </div>
+        </div>
+        <div class="hint">In Google Maps, long-press a spot to copy its coordinates.</div>
+      </div>
+
+      <div class="fields" data-for="wifi" hidden>
+        <div class="field">
+          <label for="wifiSsid">Network name</label>
+          <input type="text" id="wifiSsid" placeholder="Office Wi-Fi" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="wifiPass">Password</label>
+          <input type="text" id="wifiPass" placeholder="Network password" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="wifiSec">Security</label>
+          <select id="wifiSec">
+            <option value="WPA">WPA / WPA2 / WPA3</option>
+            <option value="WEP">WEP</option>
+            <option value="nopass">None (open network)</option>
+          </select>
+        </div>
+        <label class="check"><input type="checkbox" id="wifiHidden"> Hidden network</label>
+      </div>
+    </div>
+
+    <div>
+      <div class="group-title">Bits</div>
+      <div class="btn-grid three" data-opt="bits">
+        <button class="tool active" data-val="blocky">
+          <svg viewBox="0 0 3 3" aria-hidden="true"><path d="M0 0h1v1H0zM1 1h1v1H1zM2 0h1v1H2zM0 2h2v1H0z"/></svg>Blocky</button>
+        <button class="tool" data-val="rounded">
+          <svg viewBox="0 0 3 3" aria-hidden="true"><path d="M.5 0A.5 .5 0 0 1 1 .5V1H.5A.5 .5 0 0 1 .5 0zM2.5 0A.5 .5 0 1 1 2.5 1A.5 .5 0 1 1 2.5 0zM1 1h.5A.5 .5 0 0 1 2 1.5V2H1zM.5 2H2v.5A.5 .5 0 0 1 1.5 3H.5A.5 .5 0 0 1 .5 2z"/></svg>Rounded</button>
+        <button class="tool" data-val="braille">
+          <svg viewBox="0 0 3 3" aria-hidden="true"><circle cx=".5" cy=".5" r=".36"/><circle cx="2.5" cy=".5" r=".36"/><circle cx="1.5" cy="1.5" r=".36"/><circle cx=".5" cy="2.5" r=".36"/><circle cx="1.5" cy="2.5" r=".36"/></svg>Braille</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="group-title">Eyes</div>
+      <div class="btn-grid" data-opt="eyes">
+        <button class="tool active" data-val="box">
+          <svg viewBox="0 0 7 7" aria-hidden="true"><path fill-rule="evenodd" d="M0 0h7v7H0zM1 1v5h5V1z"/></svg>Box</button>
+        <button class="tool" data-val="rounded">
+          <svg viewBox="0 0 7 7" aria-hidden="true"><path fill-rule="evenodd" d="M2.2 0h2.6A2.2 2.2 0 0 1 7 2.2v2.6A2.2 2.2 0 0 1 4.8 7H2.2A2.2 2.2 0 0 1 0 4.8V2.2A2.2 2.2 0 0 1 2.2 0zM2.3 1A1.3 1.3 0 0 0 1 2.3v2.4A1.3 1.3 0 0 0 2.3 6h2.4A1.3 1.3 0 0 0 6 4.7V2.3A1.3 1.3 0 0 0 4.7 1z"/></svg>Rounded</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="group-title">Pupils</div>
+      <div class="btn-grid" data-opt="pupils">
+        <button class="tool active" data-val="square">
+          <svg viewBox="0 0 3 3" aria-hidden="true"><path d="M0 0h3v3H0z"/></svg>Square</button>
+        <button class="tool" data-val="rounded">
+          <svg viewBox="0 0 3 3" aria-hidden="true"><rect width="3" height="3" rx="1" ry="1"/></svg>Rounded</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="group-title">Size</div>
+      <div class="row"><span>Export size, px</span><span class="val" id="sizeVal">512</span></div>
+      <input type="range" id="sizeRange" min="128" max="2048" step="16" value="512" aria-label="Export size in pixels">
+    </div>
+
+    <div>
+      <div class="group-title">Padding</div>
+      <div class="row"><span>Quiet zone, in modules</span><span class="val" id="padVal">4</span></div>
+      <input type="range" id="padRange" min="0" max="10" step="1" value="4" aria-label="Padding in modules">
+      <div class="hint">Most scanners read best with 4 or more.</div>
+    </div>
+
+    <div id="exportGroup">
+      <div class="group-title">Export</div>
+      <div class="export">
+        <button class="reset" id="btnPng">Download PNG</button>
+        <button class="reset" id="btnSvg">Download SVG</button>
+      </div>
+      <div class="status" id="status" aria-live="polite"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const state = { type:'url', bits:'blocky', eyes:'box', pupils:'square', size:512, pad:4 };
+  const LIGHT = '#e7eaf0', DARK = '#0d0f14';
+  const $ = id => document.getElementById(id);
+  const plate = $('plate'), dims = $('dims'), payloadEl = $('payload'), statusEl = $('status');
+  let currentSvg = '';
+
+  if (window.qrcode && qrcode.stringToBytesFuncs && qrcode.stringToBytesFuncs['UTF-8']){
+    qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
+  }
+
+  /* ---------- Payload builders ---------- */
+  const wifiEsc = s => s.replace(/([\\;,:"])/g, '\\$1');
+  function buildPayload(){
+    switch(state.type){
+      case 'url': {
+        let v = $('urlInput').value.trim();
+        if(!v) return {empty:'Enter a web address to generate the code.'};
+        if(!/^[a-z][a-z0-9+.-]*:/i.test(v)) v = 'https://' + v;
+        return {data:v};
+      }
+      case 'email': {
+        const to = $('emailTo').value.trim();
+        if(!to) return {empty:'Enter the email address the message should go to.'};
+        const q = [];
+        const sub = $('emailSubject').value.trim(), body = $('emailBody').value.trim();
+        if(sub) q.push('subject=' + encodeURIComponent(sub));
+        if(body) q.push('body=' + encodeURIComponent(body));
+        return {data:'mailto:' + to + (q.length ? '?' + q.join('&') : '')};
+      }
+      case 'phone': {
+        const num = $('phoneInput').value.replace(/[^\d+]/g, '');
+        if(!num) return {empty:'Enter a phone number to generate the code.'};
+        return {data:'tel:' + num};
+      }
+      case 'location': {
+        const latS = $('latInput').value.trim().replace(',', '.');
+        const lngS = $('lngInput').value.trim().replace(',', '.');
+        if(!latS || !lngS) return {empty:'Enter latitude and longitude to generate the code.'};
+        const lat = Number(latS), lng = Number(lngS);
+        if(!isFinite(lat) || lat < -90 || lat > 90) return {error:'Latitude must be a number between -90 and 90.'};
+        if(!isFinite(lng) || lng < -180 || lng > 180) return {error:'Longitude must be a number between -180 and 180.'};
+        return {data:'geo:' + lat + ',' + lng};
+      }
+      case 'wifi': {
+        const ssid = $('wifiSsid').value;
+        if(!ssid.trim()) return {empty:'Enter the network name to generate the code.'};
+        const sec = $('wifiSec').value, pass = $('wifiPass').value;
+        if(sec !== 'nopass' && !pass) return {empty:'Enter the network password, or set security to None.'};
+        let s = 'WIFI:T:' + sec + ';S:' + wifiEsc(ssid) + ';';
+        if(sec !== 'nopass') s += 'P:' + wifiEsc(pass) + ';';
+        if($('wifiHidden').checked) s += 'H:true;';
+        return {data:s + ';'};
+      }
+    }
+  }
+
+  /* ---------- Shape helpers (all in module units) ---------- */
+  const f = n => +n.toFixed(3);
+  function roundedRect(x, y, w, h, tl, tr, br, bl){
+    return 'M' + f(x+tl) + ' ' + f(y) +
+      'H' + f(x+w-tr) + (tr ? 'A' + tr + ' ' + tr + ' 0 0 1 ' + f(x+w) + ' ' + f(y+tr) : '') +
+      'V' + f(y+h-br) + (br ? 'A' + br + ' ' + br + ' 0 0 1 ' + f(x+w-br) + ' ' + f(y+h) : '') +
+      'H' + f(x+bl)   + (bl ? 'A' + bl + ' ' + bl + ' 0 0 1 ' + f(x) + ' ' + f(y+h-bl) : '') +
+      'V' + f(y+tl)   + (tl ? 'A' + tl + ' ' + tl + ' 0 0 1 ' + f(x+tl) + ' ' + f(y) : '') + 'Z';
+  }
+  function circle(cx, cy, r){
+    return 'M' + f(cx-r) + ' ' + f(cy) + 'a' + r + ' ' + r + ' 0 1 0 ' + f(2*r) + ' 0' +
+           'a' + r + ' ' + r + ' 0 1 0 ' + f(-2*r) + ' 0Z';
+  }
+
+  /* ---------- QR -> SVG ---------- */
+  function buildSvg(data, px){
+    const qr = qrcode(0, 'M');
+    qr.addData(data);
+    qr.make();
+    const n = qr.getModuleCount(), p = state.pad, total = n + p*2;
+
+    const inFinder = (r, c) =>
+      (r < 7 && c < 7) || (r < 7 && c >= n-7) || (r >= n-7 && c < 7);
+    const dark = (r, c) => r >= 0 && c >= 0 && r < n && c < n && !inFinder(r, c) && qr.isDark(r, c);
+
+    let bits = '';
+    if(state.bits === 'blocky'){
+      for(let r = 0; r < n; r++){
+        let c = 0;
+        while(c < n){
+          if(dark(r, c)){
+            let run = 1;
+            while(c + run < n && dark(r, c + run)) run++;
+            bits += 'M' + (c+p) + ' ' + (r+p) + 'h' + run + 'v1h-' + run + 'Z';
+            c += run;
+          } else c++;
+        }
+      }
+    } else if(state.bits === 'rounded'){
+      const R = 0.5;
+      for(let r = 0; r < n; r++) for(let c = 0; c < n; c++){
+        if(!dark(r, c)) continue;
+        const up = dark(r-1, c), dn = dark(r+1, c), lf = dark(r, c-1), rt = dark(r, c+1);
+        bits += roundedRect(c+p, r+p, 1, 1,
+          (!up && !lf) ? R : 0, (!up && !rt) ? R : 0,
+          (!dn && !rt) ? R : 0, (!dn && !lf) ? R : 0);
+      }
+    } else {
+      for(let r = 0; r < n; r++) for(let c = 0; c < n; c++){
+        if(dark(r, c)) bits += circle(c+p+0.5, r+p+0.5, 0.4);
+      }
+    }
+
+    let eyes = '', pupils = '';
+    [[0,0],[0,n-7],[n-7,0]].forEach(([r, c]) => {
+      const x = c + p, y = r + p;
+      if(state.eyes === 'box'){
+        eyes += 'M' + x + ' ' + y + 'h7v7h-7Z' + 'M' + (x+1) + ' ' + (y+1) + 'v5h5v-5Z';
+      } else {
+        eyes += roundedRect(x, y, 7, 7, 2.2, 2.2, 2.2, 2.2) +
+                roundedRect(x+1, y+1, 5, 5, 1.3, 1.3, 1.3, 1.3);
+      }
+      if(state.pupils === 'square'){
+        pupils += 'M' + (x+2) + ' ' + (y+2) + 'h3v3h-3Z';
+      } else {
+        pupils += roundedRect(x+2, y+2, 3, 3, 1, 1, 1, 1);
+      }
+    });
+
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' + px + '" height="' + px +
+      '" viewBox="0 0 ' + total + ' ' + total + '"' +
+      (state.bits === 'blocky' && state.eyes === 'box' && state.pupils === 'square' ? ' shape-rendering="crispEdges"' : '') + '>' +
+      '<rect width="' + total + '" height="' + total + '" fill="' + LIGHT + '"/>' +
+      '<path fill="' + DARK + '" d="' + bits + '"/>' +
+      '<path fill="' + DARK + '" fill-rule="evenodd" d="' + eyes + '"/>' +
+      '<path fill="' + DARK + '" d="' + pupils + '"/>' +
+      '</svg>';
+    return {svg, n};
+  }
+
+  /* ---------- Render ---------- */
+  function render(){
+    currentSvg = '';
+    statusEl.textContent = '';
+    if(!window.qrcode){
+      showEmpty('The QR library did not load. Check your connection and reload the page.', true);
+      return;
+    }
+    const res = buildPayload();
+    if(res.empty){ showEmpty(res.empty, false); return; }
+    if(res.error){ showEmpty(res.error, true); return; }
+    try{
+      const out = buildSvg(res.data, state.size);
+      currentSvg = out.svg;
+      plate.innerHTML = out.svg;
+      dims.textContent = state.size + ' × ' + state.size + ' px, ' + out.n + ' × ' + out.n + ' modules';
+      payloadEl.textContent = res.data;
+      setExportEnabled(true);
+    } catch(e){
+      showEmpty('Too much content for one QR code. Shorten the text and try again.', true);
+    }
+  }
+  function showEmpty(msg, isError){
+    plate.innerHTML = '<div class="empty' + (isError ? ' error' : '') + '">' + msg + '</div>';
+    dims.textContent = '';
+    payloadEl.textContent = '';
+    setExportEnabled(false);
+  }
+  function setExportEnabled(on){
+    $('btnPng').disabled = !on;
+    $('btnSvg').disabled = !on;
+  }
+
+  /* ---------- Controls ---------- */
+  $('typeGrid').addEventListener('click', e => {
+    const b = e.target.closest('button[data-type]');
+    if(!b) return;
+    state.type = b.dataset.type;
+    $('typeGrid').querySelectorAll('button').forEach(x => {
+      x.classList.toggle('active', x === b);
+      x.setAttribute('aria-pressed', x === b);
+    });
+    document.querySelectorAll('.fields').forEach(fs => { fs.hidden = fs.dataset.for !== state.type; });
+    render();
+  });
+
+  document.querySelectorAll('[data-opt]').forEach(grid => {
+    const key = grid.dataset.opt;
+    grid.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.classList.contains('active')));
+    grid.addEventListener('click', e => {
+      const b = e.target.closest('button[data-val]');
+      if(!b) return;
+      state[key] = b.dataset.val;
+      grid.querySelectorAll('button').forEach(x => {
+        x.classList.toggle('active', x === b);
+        x.setAttribute('aria-pressed', x === b);
+      });
+      render();
+    });
+  });
+  $('typeGrid').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.classList.contains('active')));
+
+  $('sizeRange').addEventListener('input', e => {
+    state.size = +e.target.value; $('sizeVal').textContent = state.size; render();
+  });
+  $('padRange').addEventListener('input', e => {
+    state.pad = +e.target.value; $('padVal').textContent = state.pad; render();
+  });
+  document.querySelectorAll('.fields input, .fields textarea, .fields select').forEach(el => {
+    el.addEventListener('input', render);
+    el.addEventListener('change', render);
+  });
+
+  /* ---------- Export ---------- */
+  let downloads = null;
+  function fileBase(){ return 'qr-' + state.type; }
+
+  function svgToPngBlob(svg, px){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const cv = document.createElement('canvas');
+        cv.width = px; cv.height = px;
+        const ctx = cv.getContext('2d');
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, 0, 0, px, px);
+        cv.toBlob(b => b ? resolve(b) : reject(new Error('png')), 'image/png');
+      };
+      img.onerror = () => reject(new Error('img'));
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    });
+  }
+
+  function directDownload(filename, data){
+    const blob = data instanceof Blob ? data : new Blob([data], {type:'image/svg+xml'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    statusEl.textContent = 'Saved ' + filename + '.';
+  }
+
+  async function save(filename, data){
+    if(!downloads){ directDownload(filename, data); return; }
+    try{
+      await downloads.save({filename, data});
+      statusEl.textContent = 'Saved ' + filename + '.';
+    } catch(err){
+      const code = err && err.code;
+      if(code === 'declined') statusEl.textContent = 'Download cancelled.';
+      else if(code === 'rate_limited') statusEl.textContent = 'A download prompt is already open. Finish it, then try again.';
+      else statusEl.textContent = 'This file could not be saved here.';
+    }
+  }
+
+  $('btnSvg').addEventListener('click', () => {
+    if(currentSvg) save(fileBase() + '.svg', currentSvg);
+  });
+  $('btnPng').addEventListener('click', async () => {
+    if(!currentSvg) return;
+    try{
+      const blob = await svgToPngBlob(currentSvg, state.size);
+      save(fileBase() + '-' + state.size + '.png', blob);
+    } catch(e){
+      statusEl.textContent = 'The PNG could not be created. Try the SVG instead.';
+    }
+  });
+
+  // Standalone: plain browser downloads. Inside Claude: use the viewer's save prompt.
+  if(window.claude && typeof window.claude.use === 'function'){
+    window.claude.use('downloads').then(d => { if(d) downloads = d; }).catch(() => {});
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
