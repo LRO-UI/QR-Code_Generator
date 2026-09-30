@@ -1,4 +1,4 @@
-# Project Name
+# QR-Code Generator
 
 A simple OR-Code generator with the possibility to download it as a png or svg.
 Build with url, e-mail, wi-fi, location and phone links. Size and padding also editable, together with the bits, eyes and pupils.
